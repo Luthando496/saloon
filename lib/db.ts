@@ -52,7 +52,7 @@ export async function connectDB(): Promise<typeof mongoose> {
     };
 
     cached!.promise = mongoose
-      .connect(MONGODB_URI as string, opts) // <--- Fixed with "as string"
+      .connect(MONGODB_URI as string, opts) // <--- Fixed with "as string"`
       .then((mongooseInstance) => {
         console.log("✅ MongoDB connected successfully");
         return mongooseInstance;
