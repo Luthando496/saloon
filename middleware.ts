@@ -1,22 +1,25 @@
-import { auth } from "@/auth";
+// middleware.ts  (project root)
+// Runs on the Edge — must only import from auth.config, never from lib/auth.ts
+
+import NextAuth from "next-auth";
+import { authConfig } from "@/lib/auth.config";
 import { NextResponse } from "next/server";
+
+const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  const role = req.auth?.user?.role as string | undefined;
+  const role      = req.auth?.user?.role as string | undefined;
   const isLoggedIn = !!req.auth;
 
-  // Not logged in — redirect to login
   if (!isLoggedIn) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // Admin-only routes
   if (pathname.startsWith("/dashboard") && role !== "admin") {
     return NextResponse.redirect(new URL("/appointments", req.url));
   }
 
-  // Stylist + admin only
   if (pathname.startsWith("/availability") && role === "client") {
     return NextResponse.redirect(new URL("/appointments", req.url));
   }
