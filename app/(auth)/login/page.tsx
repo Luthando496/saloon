@@ -1,17 +1,19 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { useActionState } from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "@/actions/auth";
 
-// Isolated submit button so useFormStatus works correctly —
-// it must be a child of the <form> to read its pending state
+type ActionState = {
+  error?: string;
+  success?: boolean;
+  role?: string;
+};
+
 function SubmitButton() {
   const { pending } = useFormStatus();
-
   return (
     <button
       type="submit"
@@ -39,48 +41,38 @@ function SubmitButton() {
   );
 }
 
-// Server action wrapper compatible with useActionState —
-// must return state as first arg
-async function loginAction(
-  _prevState: { error?: string },
-  formData: FormData
-): Promise<{ error?: string }> {
-  const result = await signIn(formData);
-
-  if (result?.error) {
-    return { error: result.error };
-  }
-
-  // Redirect happens client-side via router after success
-  // We encode the role in the returned state
-  return { role: result?.role } as { error?: string; role?: string };
-}
-
 export default function LoginPage() {
-  // Only 1 useState — for the show/hide password toggle
   const [showPassword, setShowPassword] = useState(false);
+  const [state, setState] = useState<ActionState>({});
+  const [isPending, setIsPending] = useState(false);
   const router = useRouter();
 
-  const [state, formAction] = useActionState(
-    async (prevState: { error?: string; role?: string }, formData: FormData) => {
-      const result = await signIn(formData);
+  // ✅ Navigate ONLY once when success=true, using useEffect
+  // This prevents router.push from being called inside the render cycle
+  useEffect(() => {
+    if (state.success && state.role) {
+      router.push(state.role === "admin" ? "/dashboard" : "/appointments");
+    }
+  }, [state.success, state.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
-      if (result?.error) {
-        return { error: result.error };
-      }
+  const handleSubmit = async (formData: FormData) => {
+    setIsPending(true);
+    setState({});
 
-      // Navigate based on role — do this outside the action using router
-      const role = result?.role;
-      router.push(role === "admin" ? "/dashboard" : "/appointments");
+    const result = await signIn(formData);
 
-      return {};
-    },
-    {}
-  );
+    setIsPending(false);
+
+    if (result?.error) {
+      setState({ error: result.error });
+    } else if (result?.success) {
+      setState({ success: true, role: result.role });
+      // Navigation happens in the useEffect above, not here
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0d0a1a] flex">
-
       {/* ── Left panel: decorative ── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden flex-col items-center justify-center px-16">
         <div className="absolute inset-0 bg-[#0d0a1a]" />
@@ -98,7 +90,6 @@ export default function LoginPage() {
           }}
         />
         <div className="absolute top-0 right-0 w-px h-full bg-gradient-to-b from-transparent via-purple-500/30 to-transparent" />
-
         <div className="relative z-10 text-center">
           <div className="mb-10">
             <p className="text-purple-400/60 text-xs tracking-[0.4em] uppercase mb-6 font-light">
@@ -135,8 +126,6 @@ export default function LoginPage() {
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-purple-500/40 to-transparent" />
 
         <div className="relative z-10 w-full max-w-md">
-
-          {/* Mobile logo */}
           <div className="lg:hidden text-center mb-10">
             <h1
               className="text-5xl font-light text-white tracking-widest"
@@ -162,16 +151,13 @@ export default function LoginPage() {
             <div className="mt-4 h-px w-12 bg-amber-400/50" />
           </div>
 
-          {/* Error — driven by useActionState, no useState needed */}
           {state?.error && (
             <div className="mb-6 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
               {state.error}
             </div>
           )}
 
-          <form action={formAction} className="space-y-5">
-
-            {/* Email */}
+          <form action={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-[11px] tracking-[0.2em] uppercase text-purple-300/50 mb-2">
                 Email address
@@ -188,7 +174,6 @@ export default function LoginPage() {
               />
             </div>
 
-            {/* Password */}
             <div>
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-[11px] tracking-[0.2em] uppercase text-purple-300/50">
@@ -212,7 +197,6 @@ export default function LoginPage() {
                              focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.05]
                              hover:border-purple-700/40 transition-all duration-300"
                 />
-                {/* show/hide — the only useState in this file */}
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
