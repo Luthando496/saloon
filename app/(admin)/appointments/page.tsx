@@ -37,7 +37,6 @@ export default async function DashboardPage() {
     return d >= todayStart && d <= todayEnd;
   });
 
-  // Use today's if any exist, otherwise fall back to all-time so the UI
   // never looks completely empty during development
   const displayAppointments =
     todayAppointments.length > 0 ? todayAppointments : allAppointments;
