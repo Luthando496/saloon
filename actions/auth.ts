@@ -9,10 +9,9 @@ import { User } from "@/models";
 
 // ─────────────────────────────────────────
 // LOGIN
-// Named "signIn" to match: import { signIn } from "@/actions/auth"
 // ─────────────────────────────────────────
 export async function signIn(formData: FormData) {
-  const email    = formData.get("email") as string;
+  const email = (formData.get("email") as string)?.trim().toLowerCase();
   const password = formData.get("password") as string;
 
   if (!email || !password) {
@@ -20,43 +19,51 @@ export async function signIn(formData: FormData) {
   }
 
   try {
-    // NextAuth v5 signIn — redirect:false so we handle navigation ourselves
-    await nextAuthSignIn("credentials", {
+    // Step 1: Let NextAuth validate credentials and create session
+    const result = await nextAuthSignIn("credentials", {
       email,
       password,
       redirect: false,
     });
 
-    // If signIn didn't throw, credentials were valid.
-    // Read the role from the database so the client can redirect correctly.
-    await connectDB();
-    const user = await User.findOne({ email: email.toLowerCase() }).select("role");
+    // If NextAuth returned an error
+    if (result?.error) {
+      return { error: "Invalid email or password." };
+    }
 
-    return { success: true, role: user?.role ?? "client" };
+    // Step 2: Fetch user role from DB (this is now safe because credentials passed)
+    await connectDB();
+    const user = await User.findOne({ email }).select("role");
+
+    if (!user) {
+      return { error: "User not found." };
+    }
+
+    return {
+      success: true,
+      role: user.role as "admin" | "stylist" | "client",
+    };
 
   } catch (error) {
-    // NextAuth throws AuthError subtypes on failure
     if (error instanceof AuthError) {
-      switch (error.type) {
-        case "CredentialsSignin":
-          return { error: "Invalid email or password." };
-        default:
-          return { error: "Authentication failed. Please try again." };
+      if (error.type === "CredentialsSignin") {
+        return { error: "Invalid email or password." };
       }
     }
-    console.error("[loginUser]", error);
+
+    console.error("[signIn action]", error);
     return { error: "Something went wrong. Please try again." };
   }
 }
 
 // ─────────────────────────────────────────
-// REGISTER
+// REGISTER (Improved a bit for consistency)
 // ─────────────────────────────────────────
 export async function registerUser(formData: FormData) {
-  const name     = formData.get("name")     as string;
-  const email    = formData.get("email")    as string;
-  const phone    = formData.get("phone")    as string;
-  const role     = formData.get("role")     as string;
+  const name = (formData.get("name") as string)?.trim();
+  const email = (formData.get("email") as string)?.trim().toLowerCase();
+  const phone = (formData.get("phone") as string)?.trim() ?? "";
+  const role = (formData.get("role") as string) ?? "client";
   const password = formData.get("password") as string;
 
   if (!name || !email || !password) {
@@ -70,7 +77,7 @@ export async function registerUser(formData: FormData) {
   try {
     await connectDB();
 
-    const existing = await User.findOne({ email: email.toLowerCase() });
+    const existing = await User.findOne({ email });
     if (existing) {
       return { error: "An account with that email already exists." };
     }
@@ -78,10 +85,10 @@ export async function registerUser(formData: FormData) {
     const passwordHash = await bcrypt.hash(password, 12);
 
     await User.create({
-      name:  name.trim(),
-      email: email.toLowerCase().trim(),
-      phone: phone?.trim() ?? "",
-      role:  role ?? "client",
+      name,
+      email,
+      phone,
+      role,
       passwordHash,
     });
 

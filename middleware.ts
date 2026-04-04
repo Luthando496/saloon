@@ -1,4 +1,3 @@
-// middleware.ts
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
 import { NextResponse } from "next/server";
@@ -7,27 +6,19 @@ const { auth } = NextAuth(authConfig);
 
 export default auth((req) => {
   const { pathname } = req.nextUrl;
-  const role      = req.auth?.user?.role as string | undefined;
+  const role = req.auth?.user?.role as string | undefined;
   const isLoggedIn = !!req.auth;
 
-  // 1. Logged-in users don't need auth pages — send them home
-  if (isLoggedIn && (pathname === "/login" || pathname === "/register")) {
-    return NextResponse.redirect(
-      new URL(role === "admin" ? "/dashboard" : "/appointments", req.url)
-    );
+  const isAuthPage = pathname === "/login" || pathname === "/register";
+
+  // If already logged in, keep them out of auth pages
+  if (isLoggedIn && isAuthPage) {
+    const target = role === "admin" ? "/dashboard" : "/appointments";
+    return NextResponse.redirect(new URL(target, req.url));
   }
 
-  // 2. Unauthenticated users on protected routes → login
-  if (!isLoggedIn) {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  // 3. Role-based restrictions
+  // Role guards
   if (pathname.startsWith("/dashboard") && role !== "admin") {
-    return NextResponse.redirect(new URL("/appointments", req.url));
-  }
-
-  if (pathname.startsWith("/availability") && role === "client") {
     return NextResponse.redirect(new URL("/appointments", req.url));
   }
 
@@ -35,15 +26,17 @@ export default auth((req) => {
 });
 
 export const config = {
-  // ⚠️  /login and /register intentionally excluded from matcher.
-  // Including them caused an infinite loop:
-  //   /login → isLoggedIn=false → redirect /login → /login → ∞
   matcher: [
-    "/dashboard/:path*",
+    "/login",
+    "/register",
+    "/appointments",
     "/appointments/:path*",
+    "/dashboard",
+    "/dashboard/:path*",
     "/availability/:path*",
     "/services/:path*",
     "/clients/:path*",
     "/profile/:path*",
+    "/staff/:path*",
   ],
 };

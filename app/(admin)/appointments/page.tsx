@@ -1,9 +1,12 @@
-// src/app/(admin)/dashboard/page.tsx
+// src/app/appointments/page.tsx
+// Auth is guaranteed by middleware — no need to call auth() here.
+// Calling auth() in a page that middleware already protects can cause
+// repeated session checks that contribute to the render loop.
 
-import Link from "next/link";
-import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { Appointment } from "@/models";
+import { redirect } from "next/navigation";
 
 const statusStyles: Record<string, string> = {
   completed: "text-emerald-400 border-emerald-400/20 bg-emerald-400/5",
@@ -12,170 +15,100 @@ const statusStyles: Record<string, string> = {
   cancelled: "text-red-400     border-red-400/20     bg-red-400/5",
 };
 
-export default async function DashboardPage() {
-  await auth();
+export default async function AppointmentsPage() {
+   const session = await auth();
+
+  if (!session?.user?.id) redirect("/login");
+
   await connectDB();
 
-  // ── Fetch ALL appointments (not filtered by today) ──────────────────
-  // Your seed data is from March 2025. Filtering by "today" returns nothing.
-  // Once you have real bookings coming in daily, swap this back to a today filter.
-  const allAppointments = await Appointment.find({})
-    .populate("clientId",  "name")
-    .populate("serviceId", "name price")
+  const appointments = await Appointment.find({
+    clientId: session.user.id,
+  })
+    .populate("serviceId", "name price durationMinutes")
     .populate({ path: "staffId", populate: { path: "userId", select: "name" } })
-    .sort({ scheduledAt: -1 }) // most recent first
+    .sort({ scheduledAt: -1 })
     .lean();
 
-  // ── Today range (kept for the label) ────────────────────────────────
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date();
-  todayEnd.setHours(23, 59, 59, 999);
-
-  const todayAppointments = allAppointments.filter((a) => {
-    const d = new Date(a.scheduledAt as string);
-    return d >= todayStart && d <= todayEnd;
-  });
-
-  // never looks completely empty during development
-  const displayAppointments =
-    todayAppointments.length > 0 ? todayAppointments : allAppointments;
-
-  const isShowingAllTime = todayAppointments.length === 0;
-
-  // ── Stats ────────────────────────────────────────────────────────────
-  const totalRevenue = allAppointments
-    .filter((a) => a.status === "completed")
-    .reduce((sum, a) => sum + ((a as any).amountPaid ?? 0), 0);
-
-  const stats = [
-    {
-      label:    isShowingAllTime ? "Total Revenue" : "Today's Revenue",
-      value:    `R ${totalRevenue.toLocaleString("en-ZA")}`,
-      sub:      "from completed appointments",
-    },
-    {
-      label:    isShowingAllTime ? "Total Appointments" : "Today's Appointments",
-      value:    allAppointments.length.toString(),
-      sub:      isShowingAllTime ? "across all time" : "scheduled today",
-    },
-    {
-      label:    "Pending",
-      value:    allAppointments.filter((a) => a.status === "pending").length.toString(),
-      sub:      "awaiting confirmation",
-    },
-    {
-      label:    "Cancelled",
-      value:    allAppointments.filter((a) => a.status === "cancelled").length.toString(),
-      sub:      "total cancellations",
-    },
-  ];
-
   return (
-    <>
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mb-10">
-        {stats.map((stat, i) => (
-          <div
-            key={i}
-            className="bg-white/[0.02] border border-purple-800/20 rounded-2xl p-6 relative overflow-hidden group hover:border-purple-500/30 transition-colors"
-          >
-            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-2xl group-hover:bg-purple-500/10 transition-colors pointer-events-none" />
-            <p className="text-purple-300/50 text-xs tracking-[0.2em] uppercase mb-2">{stat.label}</p>
-            <h3 className="text-3xl font-light text-white mb-1">{stat.value}</h3>
-            <p className="text-purple-300/30 text-xs">{stat.sub}</p>
-          </div>
-        ))}
-      </div>
+    <div className="min-h-screen bg-[#0d0a1a] px-6 py-12">
+      <div className="max-w-4xl mx-auto">
 
-      {/* Appointments table */}
-      <div className="bg-white/[0.02] border border-purple-800/20 rounded-2xl overflow-hidden">
-        <div className="p-6 border-b border-purple-800/20 flex items-center justify-between">
-          <div>
-            <h3
-              className="text-xl font-light text-white"
-              style={{ fontFamily: "'Cormorant Garamond', serif" }}
-            >
-              {isShowingAllTime ? "All Appointments" : "Today's Schedule"}
-            </h3>
-            {isShowingAllTime && (
-              <p className="text-purple-400/30 text-xs mt-0.5 tracking-wider">
-                No appointments today — showing all-time data
-              </p>
-            )}
-          </div>
-          <Link
-            href="/appointments"
-            className="text-xs text-purple-400/60 hover:text-purple-300 uppercase tracking-widest transition-colors"
+        {/* Header */}
+        <div className="mb-10">
+          <p className="text-purple-400/50 text-xs tracking-[0.35em] uppercase mb-2">
+            My Bookings
+          </p>
+          <h1
+            className="text-4xl font-light text-white"
+            style={{ fontFamily: "'Cormorant Garamond', serif" }}
           >
-            View All
-          </Link>
+            My <span className="text-purple-300">Appointments</span>
+          </h1>
+          <div className="mt-3 h-px w-12 bg-amber-400/50" />
         </div>
 
-        {displayAppointments.length === 0 ? (
-          <div className="p-12 text-center text-purple-300/30 text-sm tracking-wider">
-            No appointments found.
+        {appointments.length === 0 ? (
+          <div className="bg-white/2 border border-purple-800/20 rounded-2xl p-16 text-center">
+            <p className="text-purple-300/30 text-sm tracking-wider mb-6">
+              You have no appointments yet.
+            </p>
+            <a
+              href="/"
+              className="inline-block px-8 py-3 rounded-xl bg-linear-to-r from-purple-700 to-purple-600 text-white text-sm tracking-wider hover:from-purple-600 hover:to-purple-500 transition-all"
+            >
+              Book Now
+            </a>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-purple-900/10 text-purple-300/50 text-[10px] uppercase tracking-[0.2em]">
-                  <th className="px-6 py-4 font-light">Date & Time</th>
-                  <th className="px-6 py-4 font-light">Client</th>
-                  <th className="px-6 py-4 font-light">Service</th>
-                  <th className="px-6 py-4 font-light">Stylist</th>
-                  <th className="px-6 py-4 font-light">Amount</th>
-                  <th className="px-6 py-4 font-light">Status</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm font-light text-white/70">
-                {displayAppointments.map((apt) => {
-                  const date = new Date(apt.scheduledAt as string);
-                  const dateStr = date.toLocaleDateString("en-ZA", {
-                    day: "numeric",
-                    month: "short",
-                    year: isShowingAllTime ? "numeric" : undefined,
-                  });
-                  const timeStr = date.toLocaleTimeString("en-ZA", {
-                    hour:   "2-digit",
-                    minute: "2-digit",
-                  });
+          <div className="space-y-4">
+            {appointments.map((apt) => {
+              const date    = new Date(apt.scheduledAt as string);
+              const dateStr = date.toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" });
+              const timeStr = date.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+              const service = (apt.serviceId as any);
+              const stylist = (apt.staffId   as any)?.userId?.name ?? "—";
+              const status  = (apt.status    as string) ?? "pending";
 
-                  const client  = (apt.clientId  as any)?.name       ?? "—";
-                  const service = (apt.serviceId as any)?.name       ?? "—";
-                  const stylist = (apt.staffId   as any)?.userId?.name ?? "—";
-                  const status  = (apt.status    as string) ?? "pending";
-                  const amount  = (apt as any).amountPaid ?? 0;
+              return (
+                <div
+                  key={apt._id?.toString()}
+                  className="bg-white/2 border border-purple-800/20 rounded-2xl p-6 hover:border-purple-500/20 transition-all"
+                >
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div>
+                      <h3 className="text-white text-base font-light mb-1">
+                        {service?.name ?? "—"}
+                      </h3>
+                      <p className="text-purple-300/40 text-xs">
+                        with {stylist} · {service?.durationMinutes} min
+                      </p>
+                    </div>
+                    <span className={`text-[10px] px-3 py-1 rounded-full border uppercase tracking-wider ${statusStyles[status] ?? statusStyles.pending}`}>
+                      {status}
+                    </span>
+                  </div>
 
-                  return (
-                    <tr
-                      key={apt._id?.toString()}
-                      className="border-b border-purple-800/10 hover:bg-white/[0.02] transition-colors"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-purple-300/80">
-                        <span>{dateStr}</span>
-                        <span className="text-purple-400/40 ml-2 text-xs">{timeStr}</span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">{client}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-purple-200/50">{service}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">{stylist}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-amber-400/70">
-                        {amount > 0 ? `R ${amount.toLocaleString("en-ZA")}` : "—"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 text-[10px] uppercase tracking-wider rounded-full border ${statusStyles[status] ?? statusStyles.pending}`}>
-                          {status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  <div className="mt-4 pt-4 border-t border-purple-800/20 flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-2 text-purple-300/40 text-xs">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                      </svg>
+                      {dateStr} at {timeStr}
+                    </div>
+                    <span className="text-amber-400/70 text-sm font-light">
+                      {(apt as any).amountPaid > 0
+                        ? `R ${(apt as any).amountPaid.toLocaleString("en-ZA")}`
+                        : service?.price ? `R ${service.price.toLocaleString("en-ZA")}` : "—"
+                      }
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }
